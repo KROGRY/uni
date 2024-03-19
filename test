@@ -1,0 +1,56 @@
+#se realizan las importaciones necesarias
+import rospy
+from geometry_msgs.msg import Twist
+import sys
+
+#se define un modulo de movimiento
+def mover():
+    rospy.init_node("IQS_moves")                                                #se inicializa un nodo, que va a gestionar el movimiento
+    movement_publisher= rospy.Publisher('cmd_vel', Twist , queue_size=10)       #se deinen los parametros necesarios
+    movement_cmd = Twist()                                                      #y el vector de valores a usar
+    parada=Twist()
+
+    if len(sys.argv)>3:                                                         #se recogen los dos valores 
+        vel_lineal = float(sys.argv[1])                                         #velocidad lineal
+        vel_giro = float(sys.argv[2])                                           #velocidad de giro
+        tiempo = float (sys.argv[3])                                            #el tercer parametro es el tiempo que dura el movimiento
+
+        itera = tiempo * 10                                                     #se calculan las iteraciones necesarias
+        print ("puntos: "+str(itera))
+
+        movement_cmd.linear.x = vel_lineal                                      #se da valor a cada variable
+        movement_cmd.linear.y = 0
+        movement_cmd.linear.z = 0
+        movement_cmd.angular.x = 0
+        movement_cmd.angular.y = 0              
+        movement_cmd.angular.z = vel_giro
+    
+        print (movement_cmd)                                                    #printamos en pantalla para poder verlo
+
+        parada.linear.x = 0                                                     #se define el vector de parada
+        parada.linear.y = 0
+        parada.linear.z = 0
+        parada.angular.x = 0
+        parada.angular.y = 0
+        parada.angular.z = 0
+
+        rate = rospy.Rate(10)                                                   #se define un valor conocido
+        contador = 0                                                            #se pone el contador a 0
+
+        while not rospy.is_shutdown():                                          #se define un movimiento sin fin
+            if contador < itera:                                                #asignamos iteraciones de 0,1 segundos
+                movement_publisher.publish(movement_cmd)
+            else:
+                movement_publisher.publish(parada)                              #pasado el tiempo se para el robot
+
+            contador +=1                                                        #cada 0,1 seg se inica otro movimiento
+            rate.sleep()
+
+    else:
+        print('Faltan argumentos, Se deben entregar 3 valores [velocidad lineal, velocidad de giro, tiempo], sin comar ni parentesis')
+
+if __name__=='__main__':
+    try:
+        mover()
+    except rospy.ROSInterruptException:
+        pass    
