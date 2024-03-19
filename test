@@ -1,56 +1,33 @@
-#se realizan las importaciones necesarias
+#!/usr/bin/env python
+
 import rospy
-from geometry_msgs.msg import Twist
-import sys
+from nav_msgs.msg import Odometry
 
-#se define un modulo de movimiento
-def mover():
-    rospy.init_node("IQS_moves")                                                #se inicializa un nodo, que va a gestionar el movimiento
-    movement_publisher= rospy.Publisher('cmd_vel', Twist , queue_size=10)       #se deinen los parametros necesarios
-    movement_cmd = Twist()                                                      #y el vector de valores a usar
-    parada=Twist()
+def odom_callback(msg):
+    # Callback function to handle odometry messages
+    position = msg.pose.pose.position
+    orientation = msg.pose.pose.orientation
+    linear_velocity = msg.twist.twist.linear
+    angular_velocity = msg.twist.twist.angular
 
-    if len(sys.argv)>3:                                                         #se recogen los dos valores 
-        vel_lineal = float(sys.argv[1])                                         #velocidad lineal
-        vel_giro = float(sys.argv[2])                                           #velocidad de giro
-        tiempo = float (sys.argv[3])                                            #el tercer parametro es el tiempo que dura el movimiento
+    print("Position: x={}, y={}, z={}".format(position.x, position.y, position.z),end='\r')
+    #print("Orientation: x={}, y={}, z={}, w={}".format(orientation.x, orientation.y, orientation.z, orientation.w))
+    #print("Linear Velocity: x={}, y={}, z={}".format(linear_velocity.x, linear_velocity.y, linear_velocity.z))
+    #print("Angular Velocity: x={}, y={}, z={}".format(angular_velocity.x, angular_velocity.y, angular_velocity.z))
 
-        itera = tiempo * 10                                                     #se calculan las iteraciones necesarias
-        print ("puntos: "+str(itera))
+def odom_listener():
+    # ROS node initialization
+    rospy.init_node('odom_listener_Bruno', anonymous=True)
 
-        movement_cmd.linear.x = vel_lineal                                      #se da valor a cada variable
-        movement_cmd.linear.y = 0
-        movement_cmd.linear.z = 0
-        movement_cmd.angular.x = 0
-        movement_cmd.angular.y = 0              
-        movement_cmd.angular.z = vel_giro
-    
-        print (movement_cmd)                                                    #printamos en pantalla para poder verlo
+    # Subscriber to the odometry topic
+    rospy.Subscriber('/odom', Odometry, odom_callback)
 
-        parada.linear.x = 0                                                     #se define el vector de parada
-        parada.linear.y = 0
-        parada.linear.z = 0
-        parada.angular.x = 0
-        parada.angular.y = 0
-        parada.angular.z = 0
+    # Spin to keep the script alive
+    rospy.spin()
+    rospy.rate=Rate(1)
 
-        rate = rospy.Rate(10)                                                   #se define un valor conocido
-        contador = 0                                                            #se pone el contador a 0
-
-        while not rospy.is_shutdown():                                          #se define un movimiento sin fin
-            if contador < itera:                                                #asignamos iteraciones de 0,1 segundos
-                movement_publisher.publish(movement_cmd)
-            else:
-                movement_publisher.publish(parada)                              #pasado el tiempo se para el robot
-
-            contador +=1                                                        #cada 0,1 seg se inica otro movimiento
-            rate.sleep()
-
-    else:
-        print('Faltan argumentos, Se deben entregar 3 valores [velocidad lineal, velocidad de giro, tiempo], sin comar ni parentesis')
-
-if __name__=='__main__':
+if __name__ == '__main__':
     try:
-        mover()
+        odom_listener()
     except rospy.ROSInterruptException:
-        pass    
+        pass
