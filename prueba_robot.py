@@ -15,7 +15,7 @@ class RoomNavigator:
         
         self.current_position = None
         self.current_orientation = None
-        self.obstacle_distance = float('inf')
+        self.obstacle_detected = False
         
         self.waypoints = [
             (2.00, 5.50),  # Punto 1
@@ -31,10 +31,9 @@ class RoomNavigator:
         ]
 
         self.current_waypoint_index = 0
-        self.reached_waypoints = []
 
         self.rate = rospy.Rate(10)  # 10Hz
-        
+
     def odom_callback(self, msg):
         self.current_position = msg.pose.pose.position
         orientation_q = msg.pose.pose.orientation
@@ -42,7 +41,9 @@ class RoomNavigator:
         self.current_orientation = euler_from_quaternion(orientation_list)[2]  # yaw
         
     def lidar_callback(self, msg):
-        self.obstacle_distance = min(min(msg.ranges), 10.0)  # Limiting range to 10 meters
+        # Simple front obstacle detection
+        front_ranges = msg.ranges[len(msg.ranges)//2 - 15:len(msg.ranges)//2 + 15]
+        self.obstacle_detected = min(front_ranges) < 1.0
     
     def calculate_angle_to_target(self, target):
         dx = target[0] - self.current_position.x
@@ -60,17 +61,19 @@ class RoomNavigator:
         distance_to_target = math.sqrt((target[0] - self.current_position.x) ** 2 + (target[1] - self.current_position.y) ** 2)
 
         twist = Twist()
-        if self.obstacle_distance < 0.5:  # If obstacle too close, stop and turn
-            twist.linear.x = 0.0
+
+        if self.obstacle_detected:
+            # Simple strategy: turn in place to find a clear path
             twist.angular.z = 0.5
-        elif distance_to_target > 0.2:  # If not close enough to waypoint
-            if abs(angle_diff) > 0.1:  # If orientation is not aligned with target, rotate
-                twist.angular.z = 0.3 if angle_diff > 0 else -0.3
-            else:  # Move forward
-                twist.linear.x = 0.5
-        else:  # If close to waypoint, move to next waypoint
-            self.current_waypoint_index += 1
-            print("Waypoint reached, moving to next.")
+        else:
+            # Navigate towards waypoint
+            if distance_to_target > 0.2:
+                if abs(angle_diff) > 0.1:
+                    twist.angular.z = 0.3 if angle_diff > 0 else -0.3
+                twist.linear.x = min(0.5, distance_to_target)
+            else:
+                self.current_waypoint_index += 1
+                print("Waypoint reached, moving to next.")
 
         self.movement_pub.publish(twist)
 
