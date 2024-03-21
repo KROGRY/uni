@@ -15,7 +15,7 @@ class RoomNavigator:
         
         self.current_position = None
         self.current_orientation = None
-        self.obstacle_detected = False
+        self.obstacle_info = {'distance': float('inf'), 'angle': 0}
         
         self.waypoints = [
             (2.00, 5.50),  # Punto 1
@@ -41,14 +41,17 @@ class RoomNavigator:
         self.current_orientation = euler_from_quaternion(orientation_list)[2]  # yaw
         
     def lidar_callback(self, msg):
-        # Simple front obstacle detection
-        front_ranges = msg.ranges[len(msg.ranges)//2 - 15:len(msg.ranges)//2 + 15]
-        self.obstacle_detected = min(front_ranges) < 1.0
-    
-    def calculate_angle_to_target(self, target):
-        dx = target[0] - self.current_position.x
-        dy = target[1] - self.current_position.y
-        return math.atan2(dy, dx)
+        front_angle_range = range(len(msg.ranges)//2 - 30, len(msg.ranges)//2 + 30)
+        min_distance = float('inf')
+        min_angle = 0
+
+        for i in front_angle_range:
+            if msg.ranges[i] < min_distance:
+                min_distance = msg.ranges[i]
+                min_angle = i
+
+        angle_range = math.radians(min_angle - len(msg.ranges) // 2)
+        self.obstacle_info = {'distance': min_distance, 'angle': angle_range}
 
     def navigate_to_waypoint(self):
         if self.current_position is None or self.current_waypoint_index >= len(self.waypoints):
@@ -56,17 +59,17 @@ class RoomNavigator:
 
         target = self.waypoints[self.current_waypoint_index]
         target_angle = self.calculate_angle_to_target(target)
-        angle_diff = target_angle - self.current_orientation
+        angle_diff = self.normalize_angle(target_angle - self.current_orientation)
 
         distance_to_target = math.sqrt((target[0] - self.current_position.x) ** 2 + (target[1] - self.current_position.y) ** 2)
 
         twist = Twist()
 
-        if self.obstacle_detected:
-            # Simple strategy: turn in place to find a clear path
-            twist.angular.z = 0.5
+        # Check if obstacle is too close
+        if self.obstacle_info['distance'] < 1.0:
+            # Determine direction to turn based on obstacle angle
+            twist.angular.z = -0.5 if self.obstacle_info['angle'] > 0 else 0.5
         else:
-            # Navigate towards waypoint
             if distance_to_target > 0.2:
                 if abs(angle_diff) > 0.1:
                     twist.angular.z = 0.3 if angle_diff > 0 else -0.3
@@ -76,6 +79,18 @@ class RoomNavigator:
                 print("Waypoint reached, moving to next.")
 
         self.movement_pub.publish(twist)
+
+    def calculate_angle_to_target(self, target):
+        dx = target[0] - self.current_position.x
+        dy = target[1] - self.current_position.y
+        return math.atan2(dy, dx)
+
+    def normalize_angle(self, angle):
+        while angle > math.pi:
+            angle -= 2 * math.pi
+        while angle < -math.pi:
+            angle += 2 * math.pi
+        return angle
 
     def run(self):
         while not rospy.is_shutdown():
