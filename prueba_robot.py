@@ -20,14 +20,28 @@ class RoomNavigator:
         self.right_side_obstacle_distance = float('inf')
         
         self.waypoints = [
-            # Waypoints here
+            (2.00, 5.50),  # Punto 1
+            (3.50, 4.50),  # Punto 2
+            (3.50, 6.50),  # Punto 3
+            (6.75, 5.50),  # Punto 4
+            (6.75, 1.50),  # Punto 5
+            (5.00, 1.50),  # Punto 6
+            (5.00, 2.50),  # Punto 7
+            (2.50, 3.75),  # Punto 8
+            (2.50, 0.25),  # Punto 9
+            (0.50, 4.50)   # Punto 10
         ]
 
         self.current_waypoint_index = 0
+        self.reached_waypoints = []
+
         self.rate = rospy.Rate(10)  # 10Hz
         
     def odom_callback(self, msg):
-        # Odom callback as before
+        self.current_position = msg.pose.pose.position
+        orientation_q = msg.pose.pose.orientation
+        orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
+        self.current_orientation = euler_from_quaternion(orientation_list)[2]  # yaw
         
     def lidar_callback(self, msg):
         # Original code to find the minimum distance
@@ -42,7 +56,9 @@ class RoomNavigator:
         self.right_side_obstacle_distance = sum(right_ranges) / len(right_ranges)
 
     def calculate_angle_to_target(self, target):
-        # Angle calculation as before
+        dx = target[0] - self.current_position.x
+        dy = target[1] - self.current_position.y
+        return math.atan2(dy, dx)
 
     def navigate_to_waypoint(self):
         if self.current_position is None or self.current_waypoint_index >= len(self.waypoints):
