@@ -89,6 +89,11 @@ class RoomNavigator:
 
         self.movement_pub.publish(twist)
 
+    def run(self):
+        while not rospy.is_shutdown():
+            self.navigate_to_waypoint()
+            self.rate.sleep()
+
 if __name__ == '__main__':
     try:
         navigator = RoomNavigator()
