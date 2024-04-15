@@ -19,11 +19,12 @@ class RoomNavigator:
         self.left_side_obstacle_distance = float('inf')
         self.right_side_obstacle_distance = float('inf')
 
-        self.state = "navigating"  # Possible states: "navigating", "avoiding_obstacle"
-        self.avoidance_direction = None  # "left" or "right"
+        self.state = "navigating"
+        self.avoidance_direction = None
+        self.last_avoidance_time = rospy.Time.now()
 
         self.waypoints = [
-        (1.00, 6.2),  # Punto 1
+            (1.00, 6.2),  # Punto 1
             (2.00, 5.50),  # Punto 1
             (3.50, 4.50),  # Punto 2
             (3.50, 6.50),  # Punto 3
@@ -46,7 +47,6 @@ class RoomNavigator:
             (0.5, 0.5),  # Punto 9
             (0.50, 4.50)   # Punto 10
         ]
-
         self.current_waypoint_index = 0
         self.rate = rospy.Rate(10)  # 10Hz
 
@@ -54,12 +54,11 @@ class RoomNavigator:
         self.current_position = msg.pose.pose.position
         orientation_q = msg.pose.pose.orientation
         orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
-        self.current_orientation = euler_from_quaternion(orientation_list)[2]  # yaw
+        self.current_orientation = euler_from_quaternion(orientation_list)[2]
 
     def lidar_callback(self, msg):
-        self.obstacle_distance = min(min(msg.ranges), 10.0)  # Limiting range to 10 meters
+        self.obstacle_distance = min(min(msg.ranges), 10.0)
 
-        # Determine if obstacles are more on the left or right
         mid_index = len(msg.ranges) // 2
         left_ranges = msg.ranges[mid_index:]
         right_ranges = msg.ranges[:mid_index]
@@ -84,17 +83,20 @@ class RoomNavigator:
 
         twist = Twist()
 
-        # State-based decision making
         if self.state == "avoiding_obstacle":
-            if self.obstacle_distance > 0.4:  # Considered safe distance
-                self.state = "navigating"  # Switch back to navigating state
+            current_time = rospy.Time.now()
+            if (current_time - self.last_avoidance_time).to_sec() > 5:  # Avoid obstacles for a limited time
+                self.state = "navigating"
+            if self.obstacle_distance > 0.4:  # Safe to navigate
+                self.state = "navigating"
             else:
                 twist.linear.x = 0.0
                 twist.angular.z = 0.1 if self.avoidance_direction == "left" else -0.1
         elif self.state == "navigating":
-            if self.obstacle_distance < 0.3:  # Obstacle too close
+            if self.obstacle_distance < 0.3:  # Detected an obstacle close by
                 self.state = "avoiding_obstacle"
                 self.avoidance_direction = "right" if self.left_side_obstacle_distance < self.right_side_obstacle_distance else "left"
+                self.last_avoidance_time = rospy.Time.now()
                 twist.linear.x = 0.0
                 twist.angular.z = 0.1 if self.avoidance_direction == "left" else -0.1
             elif distance_to_target > 0.2:
