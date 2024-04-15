@@ -33,8 +33,8 @@ class RoomNavigator:
             (6.75, 5.50),   # Punto 4
             (6.75, 6.50),   # Punto 4
             (7.5, 6.50),    # Punto 4
-            (7.5, 1.50),    # Punto 4
-            (6.75, 1.50),   # Punto 5
+            (7, 1),    # Punto 4
+            (6.75, 1),   # Punto 5
             (5.00, 1.50),   # Punto 6
             (5.00, 2.50),   # Punto 7
             (4.2, 2.50),    # Punto 7
