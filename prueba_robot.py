@@ -21,7 +21,6 @@ class RoomNavigator:
 
         self.state = "navigating"
         self.avoidance_direction = None
-        self.last_avoidance_time = rospy.Time.now()
 
         self.waypoints = [
             (1.00, 6.2),  # Punto 1
@@ -29,22 +28,22 @@ class RoomNavigator:
             (3.50, 4.50),  # Punto 2
             (3.50, 6.50),  # Punto 3
             (3.50, 4.50),  # Punto 3
-            (6, 4.50),  # Punto 3
-            (6, 5.5),  # Punto 3
+            (6, 4.50),    # Punto 3
+            (6, 5.5),     # Punto 3
             (6.75, 5.50),  # Punto 4
             (6.75, 6.50),  # Punto 4
-            (7.5, 6.50),  # Punto 4
-            (7.5, 1.50),  # Punto 4
+            (7.5, 6.50),   # Punto 4
+            (7.5, 1.50),   # Punto 4
             (6.75, 1.50),  # Punto 5
             (5.00, 1.50),  # Punto 6
             (5.00, 2.50),  # Punto 7
-            (4.2, 2.50),  # Punto 7
-            (4.2, 3.50),  # Punto 7
+            (4.2, 2.50),   # Punto 7
+            (4.2, 3.50),   # Punto 7
             (2.50, 3.55),  # Punto 8
-            (4.2, 3.50),  # Punto 7
-            (4.2, 0.5),  # Punto 7
-            (2.50, 0.5),  # Punto 9
-            (0.5, 0.5),  # Punto 9
+            (4.2, 3.50),   # Punto 7
+            (4.2, 0.5),    # Punto 7
+            (2.50, 0.5),   # Punto 9
+            (0.5, 0.5),    # Punto 9
             (0.50, 4.50)   # Punto 10
         ]
         self.current_waypoint_index = 0
@@ -72,43 +71,42 @@ class RoomNavigator:
         return math.atan2(dy, dx)
 
     def navigate_to_waypoint(self):
-    if self.current_position is None or self.current_waypoint_index >= len(self.waypoints):
-        return
+        if self.current_position is None or self.current_waypoint_index >= len(self.waypoints):
+            return
 
-    target = self.waypoints[self.current_waypoint_index]
-    target_angle = self.calculate_angle_to_target(target)
-    angle_diff = target_angle - self.current_orientation
+        target = self.waypoints[self.current_waypoint_index]
+        target_angle = self.calculate_angle_to_target(target)
+        angle_diff = target_angle - self.current_orientation
 
-    distance_to_target = math.sqrt((target[0] - self.current_position.x) ** 2 + (target[1] - self.current_position.y) ** 2)
+        distance_to_target = math.sqrt((target[0] - self.current_position.x) ** 2 + (target[1] - self.current_position.y) ** 2)
 
-    twist = Twist()
+        twist = Twist()
 
-    if self.state == "avoiding_obstacle":
-        if self.obstacle_distance > 0.4:  # Safe to navigate
-            self.state = "navigating"
-        else:
-            twist.linear.x = 0.0
-            twist.angular.z = 0.1 if self.avoidance_direction == "left" else -0.1
-    elif self.state == "navigating":
-        if self.obstacle_distance < 0.3:  # Detected an obstacle close by
-            self.state = "avoiding_obstacle"
-            self.avoidance_direction = "right" if self.left_side_obstacle_distance < self.right_side_obstacle_distance else "left"
-            twist.linear.x = 0.0
-            twist.angular.z = 0.1 if self.avoidance_direction == "left" else -0.1
-        elif distance_to_target > 0.2:
-            if abs(angle_diff) > 0.1:
-                # Apply a smoother angular adjustment, proportional to the angle difference but capped
-                twist.angular.z = max(min(0.5, 0.3 * angle_diff), -0.5)
+        if self.state == "avoiding_obstacle":
+            if self.obstacle_distance > 0.4:  # Safe to navigate
+                self.state = "navigating"
             else:
-                twist.linear.x = 0.2
+                twist.linear.x = 0.0
+                twist.angular.z = 0.1 if self.avoidance_direction == "left" else -0.1
+        elif self.state == "navigating":
+            if self.obstacle_distance < 0.3:  # Detected an obstacle close by
+                self.state = "avoiding_obstacle"
+                self.avoidance_direction = "right" if self.left_side_obstacle_distance < self.right_side_obstacle_distance else "left"
+                twist.linear.x = 0.0
+                twist.angular.z = 0.1 if self.avoidance_direction == "left" else -0.1
+            elif distance_to_target > 0.2:
+                if abs(angle_diff) > 0.1:
+                    # Apply a smoother angular adjustment, proportional to the angle difference but capped
+                    twist.angular.z = max(min(0.5, 0.3 * angle_diff), -0.5)
+                else:
+                    twist.linear.x = 0.2
+            else:
+                self.current_waypoint_index += 1
+                print("Waypoint reached, moving to next.")
         else:
-            self.current_waypoint_index += 1
-            print("Waypoint reached, moving to next.")
-    else:
-        print("Unknown state:", self.state)
+            print("Unknown state:", self.state)
 
-    self.movement_pub.publish(twist)
-
+        self.movement_pub.publish(twist)
 
     def run(self):
         while not rospy.is_shutdown():
