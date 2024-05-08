@@ -6,8 +6,46 @@ import tf
 from geometry_msgs.msg import Twist, Point
 from sensor_msgs.msg import LaserScan
 from tf.transformations import euler_from_quaternion
-from rwa2_savnani import computation
+import math
+from random import seed
+from random import random
+# seed random number generator
+seed(1)
 
+
+def generate_random():
+    """Generate a random value between 1 and 2
+
+    Return
+    ----------
+    The random value.
+    """
+    # generate random numbers between 0-1
+    value = random()
+    scaled_value = 1 + (value * (2 - 1))
+    return scaled_value
+
+
+def compute_distance(x1, y1, x2, y2):
+    """Compute the distance between 2 points.
+
+    Parameters
+    ----------
+    x1 : float
+        x coordinate of the first point.
+    y1 : float
+        y coordinate of the first point.
+    x2 : float
+        x coordinate of the second point.
+    y2 : float
+        y coordinate of the second point.
+
+    Return
+    ----------
+    The distance between between a point (x1,y1) and another point (x2,y2).
+    """
+    return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+    
 
 def get_odom_data():
     """Get the current pose of the robot from the /odom topic
@@ -132,7 +170,7 @@ def go_to_goal(goal_x, goal_y, position, rotation, distance_to_goal):
 
     # proportional control for rotating the robot
     velocity_msg.angular.z = k_v_gain * angle_to_goal-rotation
-    distance_to_goal = computation.compute_distance(position.x, position.y, goal_x, goal_y)
+    distance_to_goal = compute_distance(position.x, position.y, goal_x, goal_y)
     
     # proportional control to move the robot forward
     # We will drive the robot at a maximum speed of 0.3
@@ -214,7 +252,7 @@ if __name__ == "__main__":
             (position, rotation) = get_odom_data()
 
             # compute the distance from the current position to the goal
-            distance_to_goal = computation.compute_distance(position.x, position.y, goal_x, goal_y)
+            distance_to_goal = compute_distance(position.x, position.y, goal_x, goal_y)
             
             tick = time.time()
 
@@ -241,7 +279,7 @@ if __name__ == "__main__":
                     (position, rotation) = get_odom_data()
             
                     # compute the distance from the current position to the goal
-                    distance_to_goal = computation.compute_distance(position.x, position.y, goal_x, goal_y)
+                    distance_to_goal = compute_distance(position.x, position.y, goal_x, goal_y)
                     rospy.loginfo("distance to goal {0}". format(distance_to_goal))
 
                     if distance_to_goal < 0.25:
