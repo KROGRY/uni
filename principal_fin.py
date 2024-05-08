@@ -13,6 +13,31 @@ from random import random
 # seed random number generator
 seed(1)
 
+[
+        (1.00, 6.2),  # Punto 1
+            (2.00, 5.50),  # Punto 1
+            (3.50, 4.50),  # Punto 2
+            (3.50, 6.50),  # Punto 3
+            (3.50, 4.50),  # Punto 3
+            (6, 4.50),  # Punto 3
+            (6, 5.5),  # Punto 3
+            (6.75, 5.50),  # Punto 4
+            (6.75, 6.50),  # Punto 4
+            (7.5, 6.50),  # Punto 4
+            (7.5, 1.50),  # Punto 4
+            (6.75, 1.50),  # Punto 5
+            (5.00, 1.50),  # Punto 6
+            (5.00, 2.50),  # Punto 7
+            (4.2, 2.50),  # Punto 7
+            (4.2, 3.50),  # Punto 7
+            (2.50, 3.55),  # Punto 8
+            (4.2, 3.50),  # Punto 7
+            (4.2, 0.5),  # Punto 7
+            (2.50, 0.5),  # Punto 9
+            (0.5, 0.5),  # Punto 9
+            (0.50, 4.50)   # Punto 10
+        ]
+
 
 def generate_random():
     """Generate a random value between 1 and 2
