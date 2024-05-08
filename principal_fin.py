@@ -47,23 +47,28 @@ def compute_distance(x1, y1, x2, y2):
     return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
     
 
-def get_odom_data():
-    """Get the current pose of the robot from the /odom topic
+def get_odom_data(self, msg):
+    """Get the current pose of the robot directly from the /odom topic message.
 
-    Return
+    Parameters
     ----------
-    The position (x, y, z) and the yaw of the robot.
+    msg: nav_msgs.msg.Odometry
+        The Odometry message from the /odom topic.
 
+    Returns
+    -------
+    (geometry_msgs.msg.Point, float)
+        The position (x, y, z) and the yaw of the robot.
     """
-    try:
-        (trans, rot) = tf_listener.lookupTransform(parent_frame, child_frame, rospy.Time(0))
-        # rotation is a list [r, p, y]
-        rotation = euler_from_quaternion(rot)
-    except (tf.Exception, tf.ConnectivityException, tf.LookupException):
-        rospy.loginfo("TF Exception")
-        return
-    # return the position (x, y, z) and the yaw
-    return Point(*trans), rotation[2]
+    # Extract position (x, y, z) from the msg
+    position = msg.pose.pose.position
+
+    # Extract quaternion orientation from the msg and convert to euler
+    orientation_q = msg.pose.pose.orientation
+    orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
+    yaw = euler_from_quaternion(orientation_list)[2]  # Extract yaw from euler angles
+
+    return Point(position.x, position.y, position.z), yaw
 
 
 def Callback(scan):
@@ -211,14 +216,13 @@ if __name__ == "__main__":
     rospy.init_node("my_bot_controller")
     #Subscribe to the "/scan" topic in order to read laser scans data from it
     rospy.Subscriber("/scan", LaserScan, Callback)
+    rospy.Subscriber('/odom', Odometry, get_odom_data)
     # Set up a publisher to the /cmd_vel topic
     pub = rospy.Publisher("cmd_vel", Twist, queue_size=1)
     # Declare a message of type Twist
     velocity_msg = Twist()
     # publish the velocity at 10 Hz (10 times per second)
     rate = rospy.Rate(10)
-    # set up a tf listener to retrieve transform between the robot and the world
-    tf_listener = tf.TransformListener()
     # parent frame for the listener
     parent_frame = 'odom'
     # child frame for the listener
@@ -227,11 +231,6 @@ if __name__ == "__main__":
     k_h_gain = 0.7  #linear
     k_v_gain = 1.0  #angular
 
-    try:
-        tf_listener.waitForTransform(parent_frame, child_frame, rospy.Time(), rospy.Duration(1.0))
-    except (tf.Exception, tf.ConnectivityException, tf.LookupException):
-        rospy.loginfo("Cannot find transform between {p} and {c}".format(p=parent_frame, c=child_frame))
-        rospy.signal_shutdown("tf Exception")
 
 
     # Taking user input for the goal state, if user enters values lower than 0 or higher than 5, the program ends prompting the user with invalid arguments   
