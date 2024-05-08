@@ -179,34 +179,18 @@ def go_to_goal(goal_x, goal_y, position, rotation, distance_to_goal):
    
     x_start = position.x
     y_start = position.y
-    # rospy.loginfo("x = {0}, y = {1}".format(x_start, y_start))
     angle_to_goal = math.atan2(goal_y - y_start, goal_x - x_start)
 
-    # the domain of arctan(x) is (-inf, inf)
-    # we would like to restrict the domain to (0, 2pi)
-    if angle_to_goal < -math.pi/4 or angle_to_goal > math.pi/4:
-        if 0 > goal_y > y_start:
-            angle_to_goal = -2 * math.pi + angle_to_goal
-        elif 0 <= goal_y < y_start:
-            angle_to_goal = 2 * math.pi + angle_to_goal
-    if last_rotation > math.pi - 0.1 and rotation <= 0:
-        rotation = 2 * math.pi + rotation
-    elif last_rotation < -math.pi + 0.1 and rotation > 0:
-        rotation = -2 * math.pi + rotation
-
-    # proportional control for rotating the robot
-    velocity_msg.angular.z = k_v_gain * angle_to_goal-rotation
-    distance_to_goal = compute_distance(position.x, position.y, goal_x, goal_y)
+    angle_diff = angle_to_goal - rotation
     
     # proportional control to move the robot forward
     # We will drive the robot at a maximum speed of 0.3
-    velocity_msg.linear.x = min(k_h_gain * distance_to_goal, 0.30)
+    velocity_msg.linear.x = 0.3
 
-    # set the z angular velocity for positive and negative rotations
-    if velocity_msg.angular.z > 0:
-        velocity_msg.angular.z = min(velocity_msg.angular.z, 0.5)
+    if abs(angle_diff) > 0.1:
+        velocity_msg.angular.z = 0.3 if angle_diff > 0 else -0.3
     else:
-        velocity_msg.angular.z = max(velocity_msg.angular.z, -0.5)
+        velocity_msg.angular.z = 0.2
 
     # update the new rotation for the next loop
     last_rotation = rotation
