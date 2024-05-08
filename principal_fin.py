@@ -73,30 +73,23 @@ def compute_distance(x1, y1, x2, y2):
     return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
     
 
-def get_odom_data(self, msg):
-    """Get the current pose of the robot directly from the /odom topic message.
+def get_odom_data():
+    """Get the current pose of the robot from the /odom topic
 
-    Parameters
+    Return
     ----------
-    msg: nav_msgs.msg.Odometry
-        The Odometry message from the /odom topic.
+    The position (x, y, z) and the yaw of the robot.
 
-    Returns
-    -------
-    (geometry_msgs.msg.Point, float)
-        The position (x, y, z) and the yaw of the robot.
     """
-    global position_rob, yaw_rob
-    # Extract position (x, y, z) from the msg
-    position = msg.pose.pose.position
-
-    # Extract quaternion orientation from the msg and convert to euler
-    orientation_q = msg.pose.pose.orientation
-    orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
-    yaw = euler_from_quaternion(orientation_list)[2]  # Extract yaw from euler angles
-
-    position_rob = Point(position.x, position.y, position.z)
-    yaw_rob = yaw
+    try:
+        (trans, rot) = tf_listener.lookupTransform(parent_frame, child_frame, rospy.Time(0))
+        # rotation is a list [r, p, y]
+        rotation = euler_from_quaternion(rot)
+    except (tf.Exception, tf.ConnectivityException, tf.LookupException):
+        rospy.loginfo("TF Exception")
+        return
+    # return the position (x, y, z) and the yaw
+    return Point(*trans), rotation[2]
 
 
 def Callback(scan):
@@ -252,13 +245,18 @@ if __name__ == "__main__":
     # publish the velocity at 10 Hz (10 times per second)
     rate = rospy.Rate(10)
     # parent frame for the listener
-    parent_frame = 'odom'
+    parent_frame = '/odom'
     # child frame for the listener
-    child_frame = 'base_footprint'
+    child_frame = '/base_link'
     # gains for the proportional controllers. These values can be tuned.
     k_h_gain = 0.7  #linear
     k_v_gain = 1.0  #angular
 
+    try:
+        tf_listener.waitForTransform(parent_frame, child_frame, rospy.Time(), rospy.Duration(1.0))
+    except (tf.Exception, tf.ConnectivityException, tf.LookupException):
+        rospy.loginfo("Cannot find transform between {p} and {c}".format(p=parent_frame, c=child_frame))
+        rospy.signal_shutdown("tf Exception")
 
 
     # Taking user input for the goal state, if user enters values lower than 0 or higher than 5, the program ends prompting the user with invalid arguments   
