@@ -61,6 +61,7 @@ def get_odom_data(self, msg):
     (geometry_msgs.msg.Point, float)
         The position (x, y, z) and the yaw of the robot.
     """
+    global position_rob, yaw_rob
     # Extract position (x, y, z) from the msg
     position = msg.pose.pose.position
 
@@ -69,7 +70,8 @@ def get_odom_data(self, msg):
     orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
     yaw = euler_from_quaternion(orientation_list)[2]  # Extract yaw from euler angles
 
-    return Point(position.x, position.y, position.z), yaw
+    position_rob = Point(position.x, position.y, position.z)
+    yaw_rob = yaw
 
 
 def Callback(scan):
@@ -249,7 +251,8 @@ if __name__ == "__main__":
             goal_x, goal_y = goal[0], goal[1]
             
             # get current pose of the robot from the /odom topic
-            (position, rotation) = get_odom_data()
+            position = position_rob
+            rotation = yaw_rob
 
             # compute the distance from the current position to the goal
             distance_to_goal = compute_distance(position.x, position.y, goal_x, goal_y)
@@ -276,7 +279,8 @@ if __name__ == "__main__":
                     #________________________________________________________________________________________
 
                     # get current pose of the robot from the /odom topic
-                    (position, rotation) = get_odom_data()
+                    position = position_rob
+                    rotation = yaw_rob
             
                     # compute the distance from the current position to the goal
                     distance_to_goal = compute_distance(position.x, position.y, goal_x, goal_y)
