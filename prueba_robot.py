@@ -1,237 +1,322 @@
-#!/usr/bin/env python
-#################################################################################
-# Copyright 2018 IWIN, SJTU
-#
-# https://iwin-fins.com
-#################################################################################
-
-# Authors: Hongbo Li, Han Wang#
-
 import rospy
-from geometry_msgs.msg import Twist, Point, Quaternion
+import math
+import time
+import sys
 import tf
-from math import radians, copysign, sqrt, pow, pi, atan2,cos,sin
-from tf.transformations import euler_from_quaternion
-import numpy as np
+from geometry_msgs.msg import Twist, Point
 from sensor_msgs.msg import LaserScan
-
-msg = """
-control your Turtlebot3!
------------------------
-this is tb3_0
------------------------
-"""
-tb3_0_pos=Point()
-tb3_1_pos=Point()
-tb3_2_pos=Point()
-tb3_3_pos=Point()
-tb3_4_pos=Point()
-tb3_4_vel=Twist()
-tb3_0_vel=Twist()
-K1=0.2
-K2=0.1
-K3=1
-detect_R=1
-safe_r=0.3
-ID=0
+from nav_msgs.msg import Odometry
+from tf.transformations import euler_from_quaternion
+import math
+from random import seed
+from random import random
+# seed random number generator
+seed(1)
 
 
+def generate_random():
+    """Generate a random value between 1 and 2
 
-class GotoPoint():
-    def __init__(self):
-        rospy.init_node('tb3_0', anonymous=False)
-        #turtlebot3_model = rospy.get_param("model")
-
-        rospy.on_shutdown(self.shutdown)
-        self.cmd_vel = rospy.Publisher('cmd_vel', Twist, queue_size=5)
-        self.tb3_0_positon=rospy.Publisher('/tb3_0_pos',Point,queue_size=5)
-        position = Point()
-        move_cmd = Twist()
-        r = rospy.Rate(10)
-        self.tf_listener = tf.TransformListener()
-        self.odom_frame = '/tb3_0/odom'
-        try:
-            self.tf_listener.waitForTransform(self.odom_frame, '/tb3_0/base_footprint', rospy.Time(), rospy.Duration(1.0))
-            self.base_frame = '/tb3_0/base_footprint'
-        except (tf.Exception, tf.ConnectivityException, tf.LookupException):
-            try:
-                self.tf_listener.waitForTransform(self.odom_frame, '/tb3_0/base_link', rospy.Time(), rospy.Duration(1.0))
-                self.base_frame = '/tb3_0/base_link'
-            except (tf.Exception, tf.ConnectivityException, tf.LookupException):
-                rospy.loginfo("Cannot find transform between odom and base_link or base_footprint")
-                rospy.signal_shutdown("tf Exception")
-        print 66
-        (position, rotation) = self.get_odom()
-        rospy.Subscriber('/tb3_1_pos',Point,point_callback_1)
-        rospy.Subscriber('/tb3_2_pos',Point,point_callback_2)
-        rospy.Subscriber('/tb3_3_pos',Point,point_callback_3)
-        rospy.Subscriber('/tb3_4_pos',Point,point_callback_4)
-        rospy.Subscriber('/tb3_4_vel',Twist,vel_callback_4)
-        self.tb3_0_positon.publish(position)
-        print 11
-        global tb3_0_vel
-        global tb3_0_pos
-        global tb3_1_pos
-        global tb3_2_pos
-        global tb3_3_pos
-        global tb3_4_pos
+    Return
+    ----------
+    The random value.
+    """
+    # generate random numbers between 0-1
+    value = random()
+    scaled_value = 1 + (value * (2 - 1))
+    return scaled_value
 
 
+def compute_distance(x1, y1, x2, y2):
+    """Compute the distance between 2 points.
 
-        tb3_0_vel_delta_x=((tb3_1_pos.x-position.x)+(tb3_2_pos.x-position.x-2)+(tb3_3_pos.x-position.x-2)+(tb3_4_pos.x-position.x-4))
-        tb3_0_vel_delta_y=((tb3_1_pos.y-position.y+4)+(tb3_2_pos.y-position.y)+(tb3_3_pos.y-position.y+4)+(tb3_4_pos.y-position.y+2))
-        if abs(tb3_0_vel_delta_x)<0.05:
-            tb3_0_vel_delta_x=0
-        if abs(tb3_0_vel_delta_y)<0.05:
-            tb3_0_vel_delta_y=0
-        goal_x=tb3_0_vel_delta_x+position.x
-        goal_y=tb3_0_vel_delta_y+position.y
-        goal_z=atan2(tb3_0_vel_delta_y,tb3_0_vel_delta_x)
-        print tb3_0_vel_delta_x;print tb3_0_vel_delta_y
-        if tb3_0_vel_delta_x==0 and tb3_0_vel_delta_y==0:
-            goal_z=0
+    Parameters
+    ----------
+    x1 : float
+        x coordinate of the first point.
+    y1 : float
+        y coordinate of the first point.
+    x2 : float
+        x coordinate of the second point.
+    y2 : float
+        y coordinate of the second point.
 
-        global tb3_4_vel
-        angular_now=rotation
-        phi=goal_z
-        avoid_delta=0
+    Return
+    ----------
+    The distance between between a point (x1,y1) and another point (x2,y2).
+    """
+    return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+    
 
-        tb3_0_pos=position
-        obstacle_pos=self.lidar(position)
-        rospy.loginfo('position.x of the obstacle : %f', obstacle_pos.x)
-        rospy.loginfo('position.y of the obstacle : %f', obstacle_pos.y)
+def get_odom_data():
+    """Get the current pose of the robot from the /odom topic
 
+    Return
+    ----------
+    The position (x, y, z) and the yaw of the robot.
 
-        # pos_nodes=[tb3_0_pos,tb3_1_pos,tb3_2_pos,tb3_3_pos,tb3_4_pos]
-        pos_nodes=[tb3_0_pos,obstacle_pos]
-        temp_x_sum=0
-        temp_y_sum=0
-        for i in range(len(pos_nodes)):
-            print i
-            if i!=ID:
-                print i
-                print pos_nodes[i].x
-                r=sqrt(pow(pos_nodes[i].x-pos_nodes[ID].x,2)+pow(pos_nodes[i].y-pos_nodes[ID].y,2))
-                print ('distance between %d is %f'%(i,r))
-                if r>safe_r and r<detect_R:
-                    # temp_x=(pow(detect_R,2)-pow(safe_r,2))*(pos_nodes[i].x-pos_nodes[ID].x)
-                    # temp_y=(pow(detect_R,2)-pow(safe_r,2))*(pos_nodes[i].y-pos_nodes[ID].y)
-                    # temp_d2=pow(pos_nodes[i].x-pos_nodes[ID].x,2)+pow(pos_nodes[i].y-pos_nodes[ID].y,2)
-                    # temp_fenmu=temp_d2-pow(safe_r,2)
-                    # temp_fenmu=pow(temp_fenmu,3)
-                    # temp_x=temp_x/temp_fenmu*(temp_d2-pow(detect_R,2))
-                    # temp_y=temp_y/temp_fenmu*(temp_d2-pow(detect_R,2))
-                    # temp_x_sum=temp_x_sum+temp_x
-                    # temp_y_sum=temp_y_sum+temp_y
-
-                    temp_x=(1/r-1/detect_R)*(pos_nodes[ID].x-pos_nodes[i].x)
-                    temp_y=(1/r-1/detect_R)*(pos_nodes[ID].y-pos_nodes[i].y)
-                    temp_fenmu=pow(r,3)
-                    temp_x=temp_x/temp_fenmu
-                    temp_y=temp_y/temp_fenmu
-                    temp_x_sum=temp_x_sum+temp_x
-                    temp_y_sum=temp_y_sum+temp_y
-
-
-
-
-
-        avoid_delta=temp_x_sum*cos(angular_now)+temp_y_sum*sin(angular_now)
-        tb3_0_vel.linear.x=K1*(tb3_0_vel_delta_x*cos(angular_now)+tb3_0_vel_delta_y*sin(angular_now))+tb3_4_vel.linear.x+K3*avoid_delta
-        delta_theta=self.compute_theta(phi,angular_now)
-        print ('the delta_ang=%f'%(delta_theta))
-        # tb3_3_vel.angular.z=tb3_4_vel.angular.z+K2*(tb3_0_vel_delta_x+tb3_0_vel_delta_y)
-        tb3_0_vel.angular.z=K2*delta_theta+tb3_4_vel.angular.z
-        self.cmd_vel.publish(tb3_0_vel)
-
-    def lidar(self,tb_pos):
-        msg = rospy.wait_for_message("scan", LaserScan)
-        LIDAR_ERR = 0.05
-        LIDAR_MAX = 1.5
-        obstacle=[]
-        min_dis=10
-        min_ang=0
-        min_point=Point()
-        for i in range(360):
-            if i <= 45 or i > 315:
-                obstacle_pos=Point()
-                if msg.ranges[i] >= LIDAR_ERR and msg.ranges[i]<=LIDAR_MAX:
-                    obstacle_pos.x=tb_pos.x+msg.ranges[i]*cos(i)
-                    obstacle_pos.y=tb_pos.y+msg.ranges[i]*sin(i)
-                    obstacle.append(obstacle_pos)
-                    if msg.ranges[i] < min_dis:
-                            min_dis = msg.ranges[i]
-                            min_ang = i
-        if min_dis<10:
-            min_point.x=tb_pos.x+min_dis*cos(i)
-            min_point.y=tb_pos.y+min_dis*sin(i)
-        else:
-            min_point.x=10
-        return min_point
-
-
-    def compute_theta(self,theta,rotation1):
-        if theta*rotation1<0:
-            if theta>0:
-                if abs(rotation1)+theta<=pi:
-                    w=abs(rotation1)+theta
-                else:
-                    w=-(2*pi+rotation1-theta)
-            else:
-                if rotation1+abs(theta)<=pi:
-                    w=-(abs(theta)+rotation1)
-                else:
-                    w=(2*pi-rotation1+theta)
-        else:
-            w=theta-rotation1
-        return w
-
-
-
-    def get_odom(self):
-        try:
-            (trans, rot) = self.tf_listener.lookupTransform(self.odom_frame, self.base_frame, rospy.Time(0))
-            rotation = euler_from_quaternion(rot)
-
-        except (tf.Exception, tf.ConnectivityException, tf.LookupException):
-            rospy.loginfo("TF Exception")
-            return
-
-        return (Point(*trans), rotation[2])
-    def shutdown(self):
-        self.cmd_vel.publish(Twist())
-        rospy.sleep(1)
-
-
-
-def point_callback_1(data):
-    global tb3_1_pos
-    tb3_1_pos.x=data.x
-    tb3_1_pos.y=data.y
-def point_callback_2(data):
-    global tb3_2_pos
-    tb3_2_pos.x=data.x
-    tb3_2_pos.y=data.y
-def point_callback_3(data):
-    global tb3_3_pos
-    tb3_3_pos.x=data.x
-    tb3_3_pos.y=data.y
-def point_callback_4(data):
-    global tb3_4_pos
-    tb3_4_pos.x=data.x
-    tb3_4_pos.y=data.y
-def vel_callback_4(data):
-    global tb3_4_vel
-    tb3_4_vel=data
-
-
-
-
-if __name__ == '__main__':
+    """
     try:
-        while not rospy.is_shutdown():
-            print(msg)
-            GotoPoint()
+        (trans, rot) = tf_listener.lookupTransform(parent_frame, child_frame, rospy.Time(0))
+        # rotation is a list [r, p, y]
+        rotation = euler_from_quaternion(rot)
+    except (tf.Exception, tf.ConnectivityException, tf.LookupException):
+        rospy.loginfo("TF Exception")
+        return
+    # return the position (x, y, z) and the yaw
+    return Point(*trans), rotation[2]
 
-    except:
-        rospy.loginfo("shutdown program.")
+
+def Callback(scan):
+    """This function is used as the callback function when the lidar data is subscribed, and it is used to assign the 
+        scan range values to 8 different sections. So, we generate 8 sections of 45 degree each to track the obstacles. 
+    """
+    global div_distance
+    for key in div_distance.keys():
+        values = []
+        if key == "0":
+            for x in scan.ranges[337:360]: 
+                if x <= obs_threshold and x != 'inf':
+                    values.append(x)
+            for x in scan.ranges[0:23]: 
+                if x <= obs_threshold and x != 'inf':
+                    values.append(x)
+        else:
+            for x in scan.ranges[23 + angle_threshold*(int(key)-1) : 23 + angle_threshold*int(key)]: 
+                if x <= obs_threshold and x != 'inf':
+                    values.append(x)
+        div_distance[key] = values
+
+
+def Robot_order():
+    """This function is used to scan the lidar data and assign the actions to the robot_order dictionary,the 
+        robot_order["flag"] is set true when the front path(-22 to 23 (45 degree range)) is not clear to traverse.
+    """
+    global robot_order
+
+    nearest = 9999999
+    distance_between_region = 0
+    goal = "0"
+    max_destination = "4"
+    max_distance = 0.0000001
+
+    for key, value in div_distance.items():
+        distance_between_region = abs(div_cost[key]-div_cost[goal])
+        
+        #if there're no obstacles in that region
+        if not len(value):
+            #checking the cheapest option
+            if (distance_between_region < nearest):
+                nearest = distance_between_region
+                max_distance = obs_threshold
+                max_destination = key
+
+        #check if it's the clearest option
+        elif(max(value) > max_distance):
+            max_distance = max(value)
+            max_destination = key
+
+    #Cost Calculation
+    distance_between_region = div_cost[max_destination]-div_cost[goal]
+
+    # We update robot_order dictionary whenever the clearest path is not 0 (front)
+    robot_order["flag"] =  (nearest != 0)
+    robot_order["angular_velocity"] = ((distance_between_region/max(1, abs(distance_between_region)))*3)
+    robot_order["sleep_time"] = ((abs(distance_between_region)*angle_threshold*math.pi)/(180*1.20))
+    
+
+def avoid_obstacle(velocity):
+    """This function is used to move the robot away from the obstcle and it is called when
+        obstacle is within a certain threhold distance.
+        
+        -----------------
+        Return:
+        Modified velocity message to avoid obstacle
+    """
+    
+    global robot_order
+    angular_velocity = robot_order["angular_velocity"]
+    #after detecting an obstacle, the robot shall back up a bit (negative) while
+    # rotating to help in case it can't perform a stationary rotation
+    velocity.linear.x = -0.5
+    velocity.linear.y = 0
+    velocity.angular.z = angular_velocity
+    return velocity
+
+
+def go_to_goal(goal_x, goal_y, position, rotation, distance_to_goal):
+    """Task the robot to reach a goal (x,y) using a proportional controller.
+    The current pose of the robot is retrieved from /odom topic.
+    Publish the message to /cmd_vel topic.
+    """
+
+    last_rotation = 0
+   
+    x_start = position.x
+    y_start = position.y
+    angle_to_goal = math.atan2(goal_y - y_start, goal_x - x_start)
+
+    angle_diff = angle_to_goal - rotation
+    
+    # proportional control to move the robot forward
+    # We will drive the robot at a maximum speed of 0.3
+
+    if abs(angle_diff) > 0.1:
+        velocity_msg.angular.z = 0.4 if angle_diff > 0 else -0.4
+        velocity_msg.linear.x = 0
+    else:
+    	velocity_msg.linear.x = 0.2
+
+    # update the new rotation for the next loop
+    last_rotation = rotation
+    
+    return velocity_msg
+
+
+if __name__ == "__main__":
+
+
+    # Subdivision of angles in the lidar scanner
+    angle_threshold = 60
+    # Obstacle threshhold, objects below this distance are considered obstacles
+    obs_threshold = 0.3
+    position_rob = None
+    yaw_rob = None
+    #this is a global variable that keeps handles the orders for the robot to follow
+    #if there's a detected object, "flag" is turned to True
+    #and the angular_vel and sleep values are calculated appropriately
+    robot_order = {"flag": False, "angular_velocity": 0.0, "sleep_time": 0}
+    
+    #This dict keeps track of the distance measures for each region
+    div_distance = { "0":[], "1":[], "2":[], "3":[], "4":[], "5":[], "6":[], "7":[] }
+    
+    #This dict keeps track of the cost of each region to move to 0th location
+    div_cost = { "0":0, "1":1, "2":2, "3":3, "4":4, "5":-3, "6":-2, "7":-1 } 
+
+    # Initialize your ROS node
+    rospy.init_node("my_bot_controller")
+    #Subscribe to the "/scan" topic in order to read laser scans data from it
+    rospy.Subscriber("/scan", LaserScan, Callback)
+    #rospy.Subscriber('/odom', Odometry, get_odom_data)
+    # Set up a publisher to the /cmd_vel topic
+    pub = rospy.Publisher("cmd_vel", Twist, queue_size=1)
+    # Declare a message of type Twist
+    velocity_msg = Twist()
+    # publish the velocity at 10 Hz (10 times per second)
+    rate = rospy.Rate(10)
+    
+    tf_listener = tf.TransformListener()
+    # parent frame for the listener
+    parent_frame = '/odom'
+    # child frame for the listener
+    child_frame = '/base_link'
+    # gains for the proportional controllers. These values can be tuned.
+    k_h_gain = 0.7  #linear
+    k_v_gain = 1.0  #angular
+
+    try:
+        tf_listener.waitForTransform(parent_frame, child_frame, rospy.Time(), rospy.Duration(1.0))
+    except (tf.Exception, tf.ConnectivityException, tf.LookupException):
+        rospy.loginfo("Cannot find transform between {p} and {c}".format(p=parent_frame, c=child_frame))
+        rospy.signal_shutdown("tf Exception")
+
+
+
+    # Taking user input for the goal state, if user enters values lower than 0 or higher than 5, the program ends prompting the user with invalid arguments   
+    if len(sys.argv) == 2:
+        try:
+            goal_state = int(sys.argv[1])
+            if goal_state < 0 or goal_state > 5:
+                sys.exit('Invalid arguments passed')
+                
+            print(goal_state)		
+            # get the goal to reach from arguments passed to the command line
+            global state_list
+            state_list = [
+            (1.00, 6.2),  # Punto 1
+            (2.00, 5.50),  # Punto 1
+            (3.50, 4.50),  # Punto 3
+            (6, 4.50),  # Punto 3
+            (6, 5.5),  # Punto 3
+            (6.75, 5.50),  # Punto 4
+            (6.75, 6.50),  # Punto 4
+            (7.5, 6.50),  # Punto 4
+            (7.5, 1.50),  # Punto 4
+            (6.75, 1.50),  # Punto 5
+            (5.00, 1.50),  # Punto 6
+            (5.00, 2.50),  # Punto 7
+            (4.2, 2.50),  # Punto 7
+            (4.2, 3.50),  # Punto 7
+            (2.50, 3.55),  # Punto 8
+            (4.2, 3.50),  # Punto 7
+            (4.2, 0.5),  # Punto 7
+            (2.50, 0.5),  # Punto 9
+            (0.5, 0.5),  # Punto 9
+            (0.50, 4.50)   # Punto 10
+        ]	
+            goal = state_list[goal_state]
+            goal_x, goal_y = goal[0], goal[1]
+            
+            # get current pose of the robot from the /odom topic
+            (position, rotation) = get_odom_data()
+
+            # compute the distance from the current position to the goal
+            distance_to_goal = compute_distance(position.x, position.y, goal_x, goal_y)
+            
+            tick = time.time()
+
+            while not rospy.is_shutdown():
+                
+                while distance_to_goal > 0.3:   # Goal threshold 0.07 
+
+                    # When robot is stuck in a loop this condition comes into play___________________________
+                    # This will give a backward jerk to robot if it doesn't reach the goal in 60 seconds
+                    tock = time.time()
+                    time_diff = tock - tick
+                    if time_diff > 60:
+                        for i in range(10):
+                            rospy.loginfo("Giving backward jerk")
+                            velocity_msg.linear.x = -0.5
+                            velocity_msg.linear.y = 0
+                            velocity_msg.angular.z = -10
+                            pub.publish(velocity_msg)
+                            rate.sleep()
+                        tick = time.time()
+                    #________________________________________________________________________________________
+
+                    # get current pose of the robot from the /odom topic
+                    (position, rotation) = get_odom_data()
+            
+                    # compute the distance from the current position to the goal
+                    distance_to_goal = compute_distance(position.x, position.y, goal_x, goal_y)
+                    rospy.loginfo("distance to goal {0}". format(distance_to_goal))
+
+                    if distance_to_goal < 0.25:
+                        vel = go_to_goal(goal_x, goal_y, position, rotation, distance_to_goal)
+                        pub.publish(vel)
+                    else:
+                        vel = go_to_goal(goal_x, goal_y, position, rotation, distance_to_goal)
+                        pub.publish(vel)
+       
+                
+                else:
+                    if goal_state + 1 < len(state_list):
+                    	goal_state += 1
+                    	goal = state_list[goal_state]
+                    	goal_x, goal_y = goal[0], goal[1]
+                    	distance_to_goal = compute_distance(position.x, position.y, goal_x, goal_y)
+                    	tick = time.time()
+                    	
+                    else:
+                    	rospy.loginfo("Goal Reached")
+                    	velocity_msg.linear.x = 0.0
+                    	velocity_msg.angular.z = 0.0
+                    	pub.publish(velocity_msg)
+                    	rate.sleep()
+                    	break
+
+        except Exception as e:
+            print(e)
+            sys.exit('Incorrect arguments passed')
+    else:
+        sys.exit('Not enough arguments passed to the command line')
