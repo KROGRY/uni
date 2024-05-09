@@ -1,19 +1,28 @@
 import rospy
 import math
-import time
-import sys
-import tf
-from geometry_msgs.msg import Twist, Point
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Twist
 from tf.transformations import euler_from_quaternion
-import math
-from random import seed
-from random import random
-# seed random number generator
-seed(1)
 
-[
+class RoomNavigator:
+    def __init__(self):
+        rospy.init_node('room_navigator', anonymous=True)
+
+        self.odom_sub = rospy.Subscriber('/odom', Odometry, self.odom_callback)
+        self.lidar_sub = rospy.Subscriber('/scan', LaserScan, self.lidar_callback)
+        self.movement_pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
+
+        self.current_position = None
+        self.current_orientation = None
+        self.obstacle_distance = float('inf')
+        self.left_side_obstacle_distance = float('inf')
+        self.right_side_obstacle_distance = float('inf')
+
+        self.state = "navigating"  # Possible states: "navigating", "avoiding_obstacle"
+        self.avoidance_direction = None  # "left" or "right"
+
+        self.waypoints = [
         (1.00, 6.2),  # Punto 1
             (2.00, 5.50),  # Punto 1
             (3.50, 4.50),  # Punto 2
@@ -38,286 +47,78 @@ seed(1)
             (0.50, 4.50)   # Punto 10
         ]
 
+        self.current_waypoint_index = 0
+        self.rate = rospy.Rate(10)  # 10Hz
 
-def generate_random():
-    """Generate a random value between 1 and 2
+    def odom_callback(self, msg):
+        self.current_position = msg.pose.pose.position
+        orientation_q = msg.pose.pose.orientation
+        orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
+        self.current_orientation = euler_from_quaternion(orientation_list)[2]  # yaw
 
-    Return
-    ----------
-    The random value.
-    """
-    # generate random numbers between 0-1
-    value = random()
-    scaled_value = 1 + (value * (2 - 1))
-    return scaled_value
+    def lidar_callback(self, msg):
+        self.obstacle_distance = min(min(msg.ranges), 10.0)  # Limiting range to 10 meters
 
+        # Determine if obstacles are more on the left or right
+        mid_index = len(msg.ranges) // 2
+        left_ranges = msg.ranges[mid_index:]
+        right_ranges = msg.ranges[:mid_index]
 
-def compute_distance(x1, y1, x2, y2):
-    """Compute the distance between 2 points.
+        self.left_side_obstacle_distance = sum(left_ranges) / len(left_ranges)
+        self.right_side_obstacle_distance = sum(right_ranges) / len(right_ranges)
 
-    Parameters
-    ----------
-    x1 : float
-        x coordinate of the first point.
-    y1 : float
-        y coordinate of the first point.
-    x2 : float
-        x coordinate of the second point.
-    y2 : float
-        y coordinate of the second point.
+    def calculate_angle_to_target(self, target):
+        dx = target[0] - self.current_position.x
+        dy = target[1] - self.current_position.y
+        return math.atan2(dy, dx)
 
-    Return
-    ----------
-    The distance between between a point (x1,y1) and another point (x2,y2).
-    """
-    return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-    
+    def navigate_to_waypoint(self):
+        if self.current_position is None or self.current_waypoint_index >= len(self.waypoints):
+            return
 
-def get_odom_data():
-    """Get the current pose of the robot from the /odom topic
+        target = self.waypoints[self.current_waypoint_index]
+        target_angle = self.calculate_angle_to_target(target)
+        angle_diff = target_angle - self.current_orientation
 
-    Return
-    ----------
-    The position (x, y, z) and the yaw of the robot.
+        distance_to_target = math.sqrt((target[0] - self.current_position.x) ** 2 + (target[1] - self.current_position.y) ** 2)
 
-    """
-    try:
-        (trans, rot) = tf_listener.lookupTransform(parent_frame, child_frame, rospy.Time(0))
-        # rotation is a list [r, p, y]
-        rotation = euler_from_quaternion(rot)
-    except (tf.Exception, tf.ConnectivityException, tf.LookupException):
-        rospy.loginfo("TF Exception")
-        return
-    # return the position (x, y, z) and the yaw
-    return Point(*trans), rotation[2]
+        twist = Twist()
 
-
-def Callback(scan):
-    """This function is used as the callback function when the lidar data is subscribed, and it is used to assign the 
-        scan range values to 8 different sections. So, we generate 8 sections of 45 degree each to track the obstacles. 
-    """
-    global div_distance
-    for key in div_distance.keys():
-        values = []
-        if key == "0":
-            for x in scan.ranges[337:360]: 
-                if x <= obs_threshold and x != 'inf':
-                    values.append(x)
-            for x in scan.ranges[0:23]: 
-                if x <= obs_threshold and x != 'inf':
-                    values.append(x)
-        else:
-            for x in scan.ranges[23 + angle_threshold*(int(key)-1) : 23 + angle_threshold*int(key)]: 
-                if x <= obs_threshold and x != 'inf':
-                    values.append(x)
-        div_distance[key] = values
-
-
-def Robot_order():
-    """This function is used to scan the lidar data and assign the actions to the robot_order dictionary,the 
-        robot_order["flag"] is set true when the front path(-22 to 23 (45 degree range)) is not clear to traverse.
-    """
-    global robot_order
-
-    nearest = 9999999
-    distance_between_region = 0
-    goal = "0"
-    max_destination = "4"
-    max_distance = 0.0000001
-
-    for key, value in div_distance.items():
-        distance_between_region = abs(div_cost[key]-div_cost[goal])
-        
-        #if there're no obstacles in that region
-        if not len(value):
-            #checking the cheapest option
-            if (distance_between_region < nearest):
-                nearest = distance_between_region
-                max_distance = obs_threshold
-                max_destination = key
-
-        #check if it's the clearest option
-        elif(max(value) > max_distance):
-            max_distance = max(value)
-            max_destination = key
-
-    #Cost Calculation
-    distance_between_region = div_cost[max_destination]-div_cost[goal]
-
-    # We update robot_order dictionary whenever the clearest path is not 0 (front)
-    robot_order["flag"] =  (nearest != 0)
-    robot_order["angular_velocity"] = ((distance_between_region/max(1, abs(distance_between_region)))*0.7)
-    robot_order["sleep_time"] = ((abs(distance_between_region)*angle_threshold*math.pi)/(180*1.20))
-    
-
-def avoid_obstacle(velocity):
-    """This function is used to move the robot away from the obstcle and it is called when
-        obstacle is within a certain threhold distance.
-        
-        -----------------
-        Return:
-        Modified velocity message to avoid obstacle
-    """
-    
-    global robot_order
-    angular_velocity = robot_order["angular_velocity"]
-    #after detecting an obstacle, the robot shall back up a bit (negative) while
-    # rotating to help in case it can't perform a stationary rotation
-    velocity.linear.x = -0.10
-    velocity.linear.y = 0
-    velocity.angular.z = angular_velocity
-    return velocity
-
-
-def go_to_goal(goal_x, goal_y, position, rotation, distance_to_goal):
-    """Task the robot to reach a goal (x,y) using a proportional controller.
-    The current pose of the robot is retrieved from /odom topic.
-    Publish the message to /cmd_vel topic.
-    """
-
-    last_rotation = 0
-   
-    x_start = position.x
-    y_start = position.y
-    angle_to_goal = math.atan2(goal_y - y_start, goal_x - x_start)
-
-    angle_diff = angle_to_goal - rotation
-    
-    # proportional control to move the robot forward
-    # We will drive the robot at a maximum speed of 0.3
-    velocity_msg.linear.x = 0.3
-
-    if abs(angle_diff) > 0.1:
-        velocity_msg.angular.z = 0.3 if angle_diff > 0 else -0.3
-    else:
-        velocity_msg.angular.z = 0.2
-
-    # update the new rotation for the next loop
-    last_rotation = rotation
-    
-    return velocity_msg
-
-
-if __name__ == "__main__":
-
-
-    # Subdivision of angles in the lidar scanner
-    angle_threshold = 45
-    # Obstacle threshhold, objects below this distance are considered obstacles
-    obs_threshold = 0.3
-
-    #this is a global variable that keeps handles the orders for the robot to follow
-    #if there's a detected object, "flag" is turned to True
-    #and the angular_vel and sleep values are calculated appropriately
-    robot_order = {"flag": False, "angular_velocity": 0.0, "sleep_time": 0}
-    
-    #This dict keeps track of the distance measures for each region
-    div_distance = { "0":[], "1":[], "2":[], "3":[], "4":[], "5":[], "6":[], "7":[] }
-    
-    #This dict keeps track of the cost of each region to move to 0th location
-    div_cost = { "0":0, "1":1, "2":2, "3":3, "4":4, "5":-3, "6":-2, "7":-1 } 
-
-    # Initialize your ROS node
-    rospy.init_node("my_bot_controller")
-    #Subscribe to the "/scan" topic in order to read laser scans data from it
-    rospy.Subscriber("/scan", LaserScan, Callback)
-    rospy.Subscriber('/odom', Odometry, get_odom_data)
-    # Set up a publisher to the /cmd_vel topic
-    pub = rospy.Publisher("cmd_vel", Twist, queue_size=1)
-    # Declare a message of type Twist
-    velocity_msg = Twist()
-    # publish the velocity at 10 Hz (10 times per second)
-    rate = rospy.Rate(10)
-    # parent frame for the listener
-    parent_frame = '/odom'
-    # child frame for the listener
-    child_frame = '/base_link'
-    # gains for the proportional controllers. These values can be tuned.
-    k_h_gain = 0.7  #linear
-    k_v_gain = 1.0  #angular
-
-    try:
-        tf_listener.waitForTransform(parent_frame, child_frame, rospy.Time(), rospy.Duration(1.0))
-    except (tf.Exception, tf.ConnectivityException, tf.LookupException):
-        rospy.loginfo("Cannot find transform between {p} and {c}".format(p=parent_frame, c=child_frame))
-        rospy.signal_shutdown("tf Exception")
-
-
-    # Taking user input for the goal state, if user enters values lower than 0 or higher than 5, the program ends prompting the user with invalid arguments   
-    if len(sys.argv) == 2:
-        try:
-            goal_state = int(sys.argv[1])
-            if goal_state < 0 or goal_state > 5:
-                sys.exit('Invalid arguments passed')          
-            
-
-            # get the goal to reach from arguments passed to the command line
-            global state_list
-            state_list = [(-2,0), (-1,2), (1,2), (2,0), (1,-2), (-1,-2)]
-            goal = state_list[goal_state]
-            goal_x, goal_y = goal[0], goal[1]
-            
-            # get current pose of the robot from the /odom topic
-            position = position_rob
-            rotation = yaw_rob
-
-            # compute the distance from the current position to the goal
-            distance_to_goal = compute_distance(position.x, position.y, goal_x, goal_y)
-            
-            tick = time.time()
-
-            while not rospy.is_shutdown():
-                
-                while distance_to_goal > 0.07:   # Goal threshold 0.07 
-
-                    # When robot is stuck in a loop this condition comes into play___________________________
-                    # This will give a backward jerk to robot if it doesn't reach the goal in 60 seconds
-                    tock = time.time()
-                    time_diff = tock - tick
-                    if time_diff > 60:
-                        for i in range(15):
-                            rospy.loginfo("Giving backward jerk")
-                            velocity_msg.linear.x = -0.5
-                            velocity_msg.linear.y = 0
-                            velocity_msg.angular.z = -0.4
-                            pub.publish(velocity_msg)
-                            rate.sleep()
-                        tick = time.time()
-                    #________________________________________________________________________________________
-
-                    # get current pose of the robot from the /odom topic
-                    position = position_rob
-                    rotation = yaw_rob
-            
-                    # compute the distance from the current position to the goal
-                    distance_to_goal = compute_distance(position.x, position.y, goal_x, goal_y)
-                    rospy.loginfo("distance to goal {0}". format(distance_to_goal))
-
-                    if distance_to_goal < 0.25:
-                        vel = go_to_goal(goal_x, goal_y, position, rotation, distance_to_goal)
-                    else:
-                        Robot_order()
-                        if(robot_order["flag"]):
-                            vel = avoid_obstacle(velocity_msg)
-                        else:
-                            vel = go_to_goal(goal_x, goal_y, position, rotation, distance_to_goal)
-
-                        pub.publish(vel)
-                        #after publishing our action, we give it some time to execute the
-                        #needed actions before reading the data again.
-                        time.sleep(robot_order["sleep_time"])
-                        rate.sleep()
-                
+        # State-based decision making
+        if self.state == "avoiding_obstacle":
+            if self.obstacle_distance > 0.4:  # Considered safe distance
+                self.state = "navigating"  # Switch back to navigating state
+            else:
+                twist.linear.x = 0.0
+                twist.angular.z = 0.1 if self.avoidance_direction == "left" else -0.1
+        elif self.state == "navigating":
+            if self.obstacle_distance < 0.3:  # Obstacle too close
+                self.state = "avoiding_obstacle"
+                self.avoidance_direction = "right" if self.left_side_obstacle_distance < self.right_side_obstacle_distance else "left"
+                twist.linear.x = 0.0
+                twist.angular.z = 0.1 if self.avoidance_direction == "left" else -0.1
+            elif distance_to_target > 0.2:
+                if abs(angle_diff) > 0.1:
+                    twist.angular.z = 0.3 if angle_diff > 0 else -0.3
                 else:
-                    rospy.loginfo("Goal Reached")
-                    # force the robot to stop by setting linear and angular velocities to 0
-                    velocity_msg.linear.x = 0.0
-                    velocity_msg.angular.z = 0.0
-                    pub.publish(velocity_msg)
-                    rate.sleep()
-                    break
+                    twist.linear.x = 0.2
+            else:
+                self.current_waypoint_index += 1
+                print("Waypoint reached, moving to next.")
+        else:
+            print("Unknown state:", self.state)
 
-        except:
-            sys.exit('Incorrect arguments passed')
-    else:
-        sys.exit('Not enough arguments passed to the command line')
+        self.movement_pub.publish(twist)
+
+    def run(self):
+        while not rospy.is_shutdown():
+            self.navigate_to_waypoint()
+            print(self.state)
+            self.rate.sleep()
+
+if __name__ == '__main__':
+    try:
+        navigator = RoomNavigator()
+        navigator.run()
+    except rospy.ROSInterruptException:
+        pass
